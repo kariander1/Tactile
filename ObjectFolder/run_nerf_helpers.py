@@ -326,7 +326,7 @@ def get_rays(intrinsics, c2w, img_id=0, expand_origin=True):
     root_num_threads = 16 # => 256 threads per block
     rays_d = kilonerf_cuda.get_rays_d(intrinsics.H, intrinsics.W, intrinsics.cx, intrinsics.cy, intrinsics.fx, intrinsics.fy, c2w[:3, :3].contiguous(), root_num_blocks, root_num_threads)
     '''
-    i, j = torch.meshgrid(torch.linspace(0, intrinsics.W-1, intrinsics.W), torch.linspace(0, intrinsics.H-1, intrinsics.H))  # pytorch's meshgrid has indexing='ij'
+    i, j = torch.meshgrid(torch.linspace(0, intrinsics.W-1, intrinsics.W), torch.linspace(0, intrinsics.H-1, intrinsics.H),indexing='ij')  # pytorch's meshgrid has indexing='ij'
     i = i.t()
     j = j.t()
     dirs = torch.stack([(i - intrinsics.cx) / intrinsics.fx, -(j - intrinsics.cy) / intrinsics.fy, -torch.ones_like(i)], -1)

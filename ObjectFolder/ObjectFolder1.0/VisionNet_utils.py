@@ -304,7 +304,7 @@ def render(H, W, focal, rays=None, c2w=None, ndc=True,
     if c2w is not None:
         # special case to render full image
         rays_o, rays_d, rays_i = get_rays(H, W, focal, c2w, img_id=img_id)
-        i, j = torch.meshgrid(torch.linspace(0, W-1, W), torch.linspace(0, H-1, H))
+        i, j = torch.meshgrid(torch.linspace(0, W-1, W), torch.linspace(0, H-1, H),indexing='ij')
     else:
         # use provided ray batch
         rays_o, rays_d, rays_i = rays

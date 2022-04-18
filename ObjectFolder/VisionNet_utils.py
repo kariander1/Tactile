@@ -796,7 +796,7 @@ def train(cfg, log_path, render_cfg_path):
                     occupancy_voxel_centers.append(torch.linspace(global_domain_min[dim] + occupancy_voxel_half_size[dim],
                                                              global_domain_max[dim] - occupancy_voxel_half_size[dim],
                                                              res[dim]))
-                occupancy_voxel_centers = torch.stack(torch.meshgrid(*occupancy_voxel_centers), dim=3).view(-1, 3)
+                occupancy_voxel_centers = torch.stack(torch.meshgrid(*occupancy_voxel_centers,indexing='ij'), dim=3).view(-1, 3)
                 
                 # Use tight domain to avoid sampling white background unessecarily modeled inside NeRF (NSVF baseline should also have access to this)
                 if 'tight_domain_min' in cfg['render'] and 'tight_domain_max' in cfg['render']:
@@ -993,11 +993,11 @@ def train(cfg, log_path, render_cfg_path):
                         torch.meshgrid(
                             torch.linspace(intrinsics.H//2 - dH, intrinsics.H//2 + dH - 1, 2*dH), 
                             torch.linspace(intrinsics.W//2 - dW, intrinsics.W//2 + dW - 1, 2*dW)
-                        ), -1)
+                        ), -1,indexing='ij')
                     if i == start:
                         Logger.write(f"[Config] Center cropping of size {2*dH} x {2*dW} is enabled until iter {cfg['precrop_iterations']}")                
                 else:
-                    coords = torch.stack(torch.meshgrid(torch.linspace(0, intrinsics.H-1, intrinsics.H), torch.linspace(0, intrinsics.W-1, intrinsics.W)), -1)  # (H, W, 2)
+                    coords = torch.stack(torch.meshgrid(torch.linspace(0, intrinsics.H-1, intrinsics.H), torch.linspace(0, intrinsics.W-1, intrinsics.W),indexing='ij'), -1)  # (H, W, 2)
 
                 coords = torch.reshape(coords, [-1,2])  # (H * W, 2)
                 select_inds = np.random.choice(coords.shape[0], size=[N_rand], replace=False)  # (N_rand,)

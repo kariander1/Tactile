@@ -114,12 +114,12 @@ def build_occupancy_tree(cfg, log_path):
     first_voxel_samples = []
     for dim in range(3):
         first_voxel_samples.append(torch.linspace(first_voxel_min[dim], first_voxel_max[dim], cfg['subsample_resolution'][dim]))
-    first_voxel_samples = torch.stack(torch.meshgrid(*first_voxel_samples), dim=3).view(-1, 3)
+    first_voxel_samples = torch.stack(torch.meshgrid(*first_voxel_samples,indexing='ij'), dim=3).view(-1, 3)
     
     ranges = []
     for dim in range(3):
         ranges.append(torch.arange(0, occupancy_res[dim]))
-    index_grid = torch.stack(torch.meshgrid(*ranges), dim=3)
+    index_grid = torch.stack(torch.meshgrid(*ranges,indexing='ij'), dim=3)
     index_grid = (index_grid * occupancy_voxel_size).unsqueeze(3)
     
     points = first_voxel_samples.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(occupancy_res + list(first_voxel_samples.shape))
