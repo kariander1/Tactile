@@ -7,7 +7,7 @@ import numpy as np
 import imageio
 import json
 
-#from torchsearchsorted import searchsorted
+# from torchsearchsorted import searchsorted
 
 import ray_utils
 
@@ -20,7 +20,7 @@ def img2mse(x, y): return torch.mean((x - y) ** 2)
 def mse2psnr(x): return -10. * torch.log(x) / torch.log(torch.tensor([10.]))
 
 
-def to8b(x): return (255*np.clip(x,0,1)).astype(np.uint8)
+def to8b(x): return (255 * np.clip(x, 0, 1)).astype(np.uint8)
 
 
 # Positional encoding
@@ -43,13 +43,13 @@ class Embedder:
         N_freqs = self.kwargs['num_freqs']
 
         if self.kwargs['log_sampling']:
-            freq_bands = 2.**torch.linspace(0., max_freq, steps=N_freqs)
+            freq_bands = 2. ** torch.linspace(0., max_freq, steps=N_freqs)
         else:
-            freq_bands = torch.linspace(2.**0., 2.**max_freq, steps=N_freqs)
+            freq_bands = torch.linspace(2. ** 0., 2. ** max_freq, steps=N_freqs)
 
         for freq in freq_bands:
             for p_fn in self.kwargs['periodic_fns']:
-                embed_fns.append(lambda x, p_fn=p_fn, freq=freq : p_fn(x * freq))
+                embed_fns.append(lambda x, p_fn=p_fn, freq=freq: p_fn(x * freq))
                 out_dim += d
 
         self.embed_fns = embed_fns
@@ -62,25 +62,26 @@ class Embedder:
 def get_embedder(multires, i=0):
     if i == -1:
         return nn.Identity(), 3
-    
+
     embed_kwargs = {
-                'include_input' : True,
-                'input_dims' : 3,
-                'max_freq_log2' : multires-1,
-                'num_freqs' : multires,
-                'log_sampling' : True,
-                'periodic_fns' : [torch.sin, torch.cos],
+        'include_input': True,
+        'input_dims': 3,
+        'max_freq_log2': multires - 1,
+        'num_freqs': multires,
+        'log_sampling': True,
+        'periodic_fns': [torch.sin, torch.cos],
     }
-    
+
     embedder_obj = Embedder(**embed_kwargs)
-    embed = lambda x, eo=embedder_obj : eo.embed(x)
+    embed = lambda x, eo=embedder_obj: eo.embed(x)
     return embed, embedder_obj.out_dim
 
 
 # Model architecture
 
 class NeRF(nn.Module):
-    def __init__(self, D=8, W=256, input_ch=3, input_ch_views=3, input_ch_lights=3, output_ch=4, skips=[4], use_viewdirs=False, use_lightdirs=False):
+    def __init__(self, D=8, W=256, input_ch=3, input_ch_views=3, input_ch_lights=3, output_ch=4, skips=[4],
+                 use_viewdirs=False, use_lightdirs=False):
         """
         """
         super(NeRF, self).__init__()
@@ -94,28 +95,30 @@ class NeRF(nn.Module):
         self.use_lightdirs = use_lightdirs
 
         self.pts_linears = nn.ModuleList(
-            [nn.Linear(input_ch, W)] + [nn.Linear(W, W) if i not in self.skips else nn.Linear(W + input_ch, W) for i in range(D-1)])
+            [nn.Linear(input_ch, W)] + [nn.Linear(W, W) if i not in self.skips else nn.Linear(W + input_ch, W) for i in
+                                        range(D - 1)])
 
         if use_viewdirs and use_lightdirs:
             self.bottleneck_linear = nn.Linear(W, W)
             self.alpha_linear = nn.Linear(W, 1)
-            self.rgb_linear = nn.Linear(W//2, 3)
-            self.views_lights_linears = nn.ModuleList([nn.Linear(input_ch_views + input_ch_lights + W, W//2)])
+            self.rgb_linear = nn.Linear(W // 2, 3)
+            self.views_lights_linears = nn.ModuleList([nn.Linear(input_ch_views + input_ch_lights + W, W // 2)])
         elif use_viewdirs:
             self.bottleneck_linear = nn.Linear(W, W)
             self.alpha_linear = nn.Linear(W, 1)
-            self.rgb_linear = nn.Linear(W//2, 3)
-            self.views_lights_linears = nn.ModuleList([nn.Linear(input_ch_views + W, W//2)])
+            self.rgb_linear = nn.Linear(W // 2, 3)
+            self.views_lights_linears = nn.ModuleList([nn.Linear(input_ch_views + W, W // 2)])
         elif use_lightdirs:
             self.bottleneck_linear = nn.Linear(W, W)
             self.alpha_linear = nn.Linear(W, 1)
-            self.rgb_linear = nn.Linear(W//2, 3)
-            self.views_lights_linears = nn.ModuleList([nn.Linear(input_ch_lights + W, W//2)])
+            self.rgb_linear = nn.Linear(W // 2, 3)
+            self.views_lights_linears = nn.ModuleList([nn.Linear(input_ch_lights + W, W // 2)])
         else:
             self.output_linear = nn.Linear(W, output_ch)
 
     def forward(self, x):
-        inputs_pts, inputs_views, inputs_lights = torch.split(x, [self.input_ch, self.input_ch_views, self.input_ch_lights], dim=-1)
+        inputs_pts, inputs_views, inputs_lights = torch.split(x, [self.input_ch, self.input_ch_views,
+                                                                  self.input_ch_lights], dim=-1)
         outputs = inputs_pts
         for i, l in enumerate(self.pts_linears):
             outputs = self.pts_linears[i](outputs)
@@ -158,14 +161,16 @@ def get_rays(H, W, focal, c2w, img_id=0):
         rays_d: [H, W, 3] float tensor. Ray directions.
         rays_i: [H, W, 1] float tensor. Image ID.
     """
-    i, j = torch.meshgrid(torch.linspace(0, W-1, W), torch.linspace(0, H-1, H),indexing='ij')  # pytorch's meshgrid has indexing='ij'
+    i, j = torch.meshgrid(torch.linspace(0, W - 1, W), torch.linspace(0, H - 1, H),
+                          indexing='ij')  # pytorch's meshgrid has indexing='ij'
     i = i.t()
     j = j.t()
-    dirs = torch.stack([(i-W*.5)/focal, -(j-H*.5)/focal, -torch.ones_like(i)], -1)  # [H, W, 3]
+    dirs = torch.stack([(i - W * .5) / focal, -(j - H * .5) / focal, -torch.ones_like(i)], -1)  # [H, W, 3]
     # Rotate ray directions from camera frame to the world frame
-    rays_d = torch.sum(dirs[..., np.newaxis, :] * c2w[:3,:3], -1)  # dot product, equals to: [c2w.dot(dir) for dir in dirs]  # [H, W, 3]
+    rays_d = torch.sum(dirs[..., np.newaxis, :] * c2w[:3, :3],
+                       -1)  # dot product, equals to: [c2w.dot(dir) for dir in dirs]  # [H, W, 3]
     # Translate camera frame's origin to the world frame. It is the origin of all rays.
-    rays_o = torch.broadcast_to(c2w[:3,-1], rays_d.shape)  # [H, W, 3]
+    rays_o = torch.broadcast_to(c2w[:3, -1], rays_d.shape)  # [H, W, 3]
     rays_i = torch.full(rays_d.size(), img_id).float()  # [H, W, 3]
     return rays_o, rays_d, rays_i
 
@@ -187,7 +192,7 @@ def get_rays_np(H, W, focal, c2w, img_id=0):
     """
     i, j = np.meshgrid(np.arange(W, dtype=np.float32),
                        np.arange(H, dtype=np.float32), indexing='xy')
-    dirs = np.stack([(i-W*.5)/focal, -(j-H*.5)/focal, -np.ones_like(i)], -1)
+    dirs = np.stack([(i - W * .5) / focal, -(j - H * .5) / focal, -np.ones_like(i)], -1)
     rays_d = np.sum(dirs[..., np.newaxis, :] * c2w[:3, :3], -1)
     rays_o = np.broadcast_to(c2w[:3, -1], np.shape(rays_d))
     rays_i = np.full_like(rays_d, img_id, dtype=np.float32)  # [H, W, 3]
@@ -209,20 +214,20 @@ def ndc_rays(H, W, focal, near, rays_o, rays_d):
       rays_d: array of shape [batch_size, 3]. Ray direction in NDC.
     """
     # Shift ray origins to near plane
-    t = -(near + rays_o[...,2]) / rays_d[...,2]
-    rays_o = rays_o + t[...,None] * rays_d
+    t = -(near + rays_o[..., 2]) / rays_d[..., 2]
+    rays_o = rays_o + t[..., None] * rays_d
 
     # Projection
-    o0 = -1./(W/(2.*focal)) * rays_o[...,0] / rays_o[...,2]
-    o1 = -1./(H/(2.*focal)) * rays_o[...,1] / rays_o[...,2]
-    o2 = 1. + 2. * near / rays_o[...,2]
+    o0 = -1. / (W / (2. * focal)) * rays_o[..., 0] / rays_o[..., 2]
+    o1 = -1. / (H / (2. * focal)) * rays_o[..., 1] / rays_o[..., 2]
+    o2 = 1. + 2. * near / rays_o[..., 2]
 
-    d0 = -1./(W/(2.*focal)) * (rays_d[...,0]/rays_d[...,2] - rays_o[...,0]/rays_o[...,2])
-    d1 = -1./(H/(2.*focal)) * (rays_d[...,1]/rays_d[...,2] - rays_o[...,1]/rays_o[...,2])
-    d2 = -2. * near / rays_o[...,2]
+    d0 = -1. / (W / (2. * focal)) * (rays_d[..., 0] / rays_d[..., 2] - rays_o[..., 0] / rays_o[..., 2])
+    d1 = -1. / (H / (2. * focal)) * (rays_d[..., 1] / rays_d[..., 2] - rays_o[..., 1] / rays_o[..., 2])
+    d2 = -2. * near / rays_o[..., 2]
 
-    rays_o = torch.stack([o0,o1,o2], -1)
-    rays_d = torch.stack([d0,d1,d2], -1)
+    rays_o = torch.stack([o0, o1, o2], -1)
+    rays_d = torch.stack([d0, d1, d2], -1)
 
     return rays_o, rays_d
 
@@ -230,10 +235,10 @@ def ndc_rays(H, W, focal, near, rays_o, rays_d):
 # Hierarchical sampling (section 5.2)
 def sample_pdf(bins, weights, N_samples, det=False, pytest=False):
     # Get pdf
-    weights = weights + 1e-5 # prevent nans
+    weights = weights + 1e-5  # prevent nans
     pdf = weights / torch.sum(weights, -1, keepdim=True)
     cdf = torch.cumsum(pdf, -1)
-    cdf = torch.cat([torch.zeros_like(cdf[...,:1]), cdf], -1)  # (batch, len(bins))
+    cdf = torch.cat([torch.zeros_like(cdf[..., :1]), cdf], -1)  # (batch, len(bins))
 
     # Take uniform samples
     if det:
@@ -255,10 +260,10 @@ def sample_pdf(bins, weights, N_samples, det=False, pytest=False):
 
     # Invert CDF
     u = u.contiguous()
-    #inds = searchsorted(cdf, u, side='right')
+    # inds = searchsorted(cdf, u, side='right')
     inds = torch.searchsorted(cdf, u, right=True)
-    below = torch.max(torch.zeros_like(inds-1), inds-1)
-    above = torch.min((cdf.shape[-1]-1) * torch.ones_like(inds), inds)
+    below = torch.max(torch.zeros_like(inds - 1), inds - 1)
+    above = torch.min((cdf.shape[-1] - 1) * torch.ones_like(inds), inds)
     inds_g = torch.stack([below, above], -1)  # (batch, N_samples, 2)
 
     # cdf_g = tf.gather(cdf, inds_g, axis=-1, batch_dims=len(inds_g.shape)-2)
@@ -267,10 +272,10 @@ def sample_pdf(bins, weights, N_samples, det=False, pytest=False):
     cdf_g = torch.gather(cdf.unsqueeze(1).expand(matched_shape), 2, inds_g)
     bins_g = torch.gather(bins.unsqueeze(1).expand(matched_shape), 2, inds_g)
 
-    denom = (cdf_g[...,1]-cdf_g[...,0])
-    denom = torch.where(denom<1e-5, torch.ones_like(denom), denom)
-    t = (u-cdf_g[...,0])/denom
-    samples = bins_g[...,0] + t * (bins_g[...,1]-bins_g[...,0])
+    denom = (cdf_g[..., 1] - cdf_g[..., 0])
+    denom = torch.where(denom < 1e-5, torch.ones_like(denom), denom)
+    t = (u - cdf_g[..., 0]) / denom
+    samples = bins_g[..., 0] + t * (bins_g[..., 1] - bins_g[..., 0])
 
     return samples
 
@@ -282,7 +287,7 @@ def raw2alpha(raw, dists):
 
 
 def compute_alpha(
-    z_vals, raw_alpha, rays_d, raw_noise_std, last_dist_method='infinity'):
+        z_vals, raw_alpha, rays_d, raw_noise_std, last_dist_method='infinity'):
     """Normalizes raw sigma predictions from the network into normalized alpha.
 
     Args:
@@ -367,7 +372,7 @@ def compute_transmittance(alpha):
     Returns:
         trans: [R, S] float tensor. Transmittance values.
     """
-    trans_tmp = torch.cumprod(1.-alpha + 1e-10, dim=-1)
+    trans_tmp = torch.cumprod(1. - alpha + 1e-10, dim=-1)
     trans = torch.ones_like(trans_tmp)
     trans[:, 1:] = trans_tmp[:, :-1]
     return trans
@@ -423,7 +428,7 @@ def compose_outputs(z_vals, rgb, alpha, white_bkgd):
 
     # To composite onto a white background, use the accumulated alpha map.
     if white_bkgd:
-        rgb_map = rgb_map + (1.-acc_map[..., None])
+        rgb_map = rgb_map + (1. - acc_map[..., None])
 
     outputs = {
         'rgb_map': rgb_map,
@@ -466,12 +471,12 @@ def default_ray_sampling(ray_batch, N_samples, lindisp, perturb):
     if not lindisp:
         # Space integration times linearly between 'near' and 'far'. Same
         # integration points will be used for all rays.
-        z_vals = near * (1.-t_vals) + far * (t_vals)
+        z_vals = near * (1. - t_vals) + far * (t_vals)
     else:
         near += 1e-10
         far += 1e-10
         # Sample linearly in inverse depth (disparity).
-        z_vals = 1./(1./near * (1.-t_vals) + 1./far * (t_vals))
+        z_vals = 1. / (1. / near * (1. - t_vals) + 1. / far * (t_vals))
     z_vals = torch.broadcast_to(z_vals, (N_rays, N_samples))
 
     # Perturb sampling time along each ray.
@@ -486,7 +491,7 @@ def default_ray_sampling(ray_batch, N_samples, lindisp, perturb):
 
     # Points in space to evaluate model at.
     pts = rays_o[..., None, :] + rays_d[..., None, :] * \
-        z_vals[..., :, None]  # [N_rays, N_samples, 3]
+          z_vals[..., :, None]  # [N_rays, N_samples, 3]
     return z_vals, pts
 
 
@@ -521,7 +526,7 @@ def default_ray_sampling_fine(ray_batch, z_vals, weights, perturb, N_importance)
     # Obtain all points to evaluate color, density at.
     z_vals, _ = torch.sort(torch.cat((z_vals, z_samples), -1), -1)
     pts = rays_o[..., None, :] + rays_d[..., None, :] * \
-        z_vals[..., :, None]  # [N_rays, N_samples + N_importance, 3]
+          z_vals[..., :, None]  # [N_rays, N_samples + N_importance, 3]
     return z_vals, z_samples, pts
 
 
@@ -552,9 +557,9 @@ def get_dirs(ray_batch, pts, metadata, use_viewdirs, use_lightdirs, lightdirs_me
         else:
             rays_i = ray_batch[:, -1:]  # [R, 1]
             lightdirs = ray_utils.get_lightdirs(  # [R, S, 3]
-                    lightdirs_method=lightdirs_method, num_rays=pts.size()[0],
-                    num_samples=pts.size()[1], rays_i=rays_i, metadata=metadata,
-                    normalize=False)
+                lightdirs_method=lightdirs_method, num_rays=pts.size()[0],
+                num_samples=pts.size()[1], rays_i=rays_i, metadata=metadata,
+                normalize=False)
     return viewdirs, lightdirs
 
 
@@ -625,7 +630,7 @@ def run_single_object(
 
     # Extract unit-normalized viewing and lighting directions.
     viewdirs, lightdirs = get_dirs(
-            ray_batch, pts, metadata, use_viewdirs, use_lightdirs, lightdirs_method)
+        ray_batch, pts, metadata, use_viewdirs, use_lightdirs, lightdirs_method)
 
     # Evaluate model at each point.
     raw = network_query_fn(pts, viewdirs, lightdirs, network_fn)  # [R, S, 4]
@@ -649,7 +654,7 @@ def run_single_object(
         z_vals, z_samples, pts = default_ray_sampling_fine(
             ray_batch, z_vals, weights, perturb, N_importance)
         viewdirs, lightdirs = get_dirs(
-                ray_batch, pts, metadata, use_viewdirs, use_lightdirs, lightdirs_method)
+            ray_batch, pts, metadata, use_viewdirs, use_lightdirs, lightdirs_method)
 
         # Make predictions with network_fine.
         run_fn = network_fn if network_fine is None else network_fine
@@ -708,6 +713,7 @@ def combine_multi_object_results(name2results):
                 results[k] = v_combined  # [R, M*O]
             else:
                 # Sort the tensors.
-                v_sorted = v_combined[gather_indices.view(-1, 2)[:, 0], gather_indices.view(-1, 2)[:, 1]].view(v_combined.size())  # [R, S, K]
+                v_sorted = v_combined[gather_indices.view(-1, 2)[:, 0], gather_indices.view(-1, 2)[:, 1]].view(
+                    v_combined.size())  # [R, S, K]
                 results[k] = v_sorted
     return results
