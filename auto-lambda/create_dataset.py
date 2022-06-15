@@ -41,9 +41,9 @@ class DataTransform(object):
 
             # Resize based on randomly sampled scale
             if task in ['im', 'noise']:
-                data_dict[task] = transforms_f.resize(data_dict[task], resized_size, Image.BILINEAR)
+                data_dict[task] = transforms_f.resize(data_dict[task], resized_size, transforms.InterpolationMode.BILINEAR)
             elif task in ['normal', 'depth', 'seg', 'part_seg', 'disp']:
-                data_dict[task] = transforms_f.resize(data_dict[task], resized_size, Image.NEAREST)
+                data_dict[task] = transforms_f.resize(data_dict[task], resized_size, transforms.InterpolationMode.NEAREST)
 
             # Add padding if crop size is smaller than the resized size
             if self.crop_size[0] > resized_size[0] or self.crop_size[1] > resized_size[1]:

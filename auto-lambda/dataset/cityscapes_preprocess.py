@@ -1,6 +1,7 @@
 import glob
 import os
 from PIL import Image
+import torchvision.transforms as transforms
 
 root = 'dataset'
 
@@ -58,7 +59,7 @@ for city in train_im_list:
     im_list.sort()
     for i in im_list:
         im = Image.open(i)
-        im = im.resize((512, 256), resample=Image.NEAREST)
+        im = im.resize((512, 256), resample=T.Int.NEAREST)
         im.save(depth_train_root + '/{}.png'.format(counter))
         counter += 1
 print('Training depth images processing has completed.')
@@ -71,7 +72,7 @@ for city in val_im_list:
     im_list.sort()
     for i in im_list:
         im = Image.open(i)
-        im = im.resize((512, 256), resample=Image.NEAREST)
+        im = im.resize((512, 256), resample=transforms.InterpolationMethod.NEAREST)
         im.save(depth_val_root + '/{}.png'.format(counter))
         counter += 1
 print('Validation depth images processing has completed.')
@@ -85,7 +86,7 @@ for city in train_label_list:
     label_list.sort()
     for l in label_list:
         im = Image.open(l)
-        im = im.resize((512, 256), resample=Image.NEAREST)
+        im = im.resize((512, 256), resample=transforms.InterpolationMethod.NEAREST)
         im.save(label_train_root + '/{}.png'.format(counter))
         counter += 1
 print('Training Label images processing has completed.')
@@ -98,7 +99,7 @@ for city in val_label_list:
     label_list.sort()
     for l in label_list:
         im = Image.open(l)
-        im = im.resize((512, 256), resample=Image.NEAREST)
+        im = im.resize((512, 256), resample=transforms.InterpolationMethod.NEAREST)
         im.save(label_val_root + '/{}.png'.format(counter))
         counter += 1
 print('Validation Label images processing has completed.')
@@ -112,7 +113,7 @@ for city in train_label_list:
     label_list.sort()
     for l in label_list:
         im = Image.open(l)
-        im = im.resize((512, 256), resample=Image.NEAREST)
+        im = im.resize((512, 256), resample=transforms.InterpolationMethod.NEAREST)
         im.save(part_train_root + '{}.tif'.format(counter))
         counter += 1
 print('Training Label images processing has completed.')
@@ -124,7 +125,7 @@ for city in val_label_list:
     label_list.sort()
     for l in label_list:
         im = Image.open(l)
-        im = im.resize((512, 256), resample=Image.NEAREST)
+        im = im.resize((512, 256), resample=transforms.InterpolationMethod.NEAREST)
         im.save(part_val_root + '/{}.tif'.format(counter))
         counter += 1
 print('Validation Label images processing has completed.')

@@ -1,12 +1,16 @@
 import argparse
+import sys
 
+import tqdm.auto
 import torch.optim as optim
 import torch.utils.data.sampler as sampler
+from datetime import datetime, date
 
 from auto_lambda import AutoLambda
 from create_network import *
 from create_dataset import *
 from utils import *
+from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser(description='Multi-task/Auxiliary Learning: Dense Prediction Tasks')
 parser.add_argument('--mode', default='none', type=str)
@@ -35,6 +39,7 @@ if not os.path.exists('logging'):
 
 # define model, optimiser and scheduler
 device = torch.device("cuda:{}".format(opt.gpu) if torch.cuda.is_available() else "cpu")
+print("Using Device:",device)
 if opt.with_noise:
     train_tasks = create_task_flags('all', opt.dataset, with_noise=True)
 else:
@@ -126,8 +131,16 @@ train_batch = len(train_loader)
 test_batch = len(test_loader)
 train_metric = TaskMetric(train_tasks, pri_tasks, batch_size, total_epoch, opt.dataset)
 test_metric = TaskMetric(train_tasks, pri_tasks, batch_size, total_epoch, opt.dataset, include_mtl=True)
-for index in range(total_epoch):
 
+# Define progress bar
+pbar_fn = tqdm.auto.tqdm
+pbar_file = sys.stdout
+
+# Configure Tensorboard
+run_dir = "./runs/{:%Y_%m_%d_%H_%M_%S}".format(datetime.now())
+writer = SummaryWriter(run_dir, flush_secs=10)
+
+for index in range(total_epoch):
     # apply Dynamic Weight Average
     if opt.weight == 'dwa':
         if index == 0 or index == 1:
@@ -141,77 +154,94 @@ for index in range(total_epoch):
 
     # iteration for all batches
     model.train()
+
     train_dataset = iter(train_loader)
+
     if opt.weight == 'autol':
         val_dataset = iter(val_loader)
 
-    for k in range(train_batch):
+    if index==0:
         train_data, train_target = train_dataset.next()
-        train_data = train_data.to(device)
-        train_target = {task_id: train_target[task_id].to(device) for task_id in train_tasks.keys()}
+        train_dataset = iter(train_loader)
+        writer.add_graph(model, train_data.to(device))
 
-        # update meta-weights with Auto-Lambda
-        if opt.weight == 'autol':
-            val_data, val_target = val_dataset.next()
-            val_data = val_data.to(device)
-            val_target = {task_id: val_target[task_id].to(device) for task_id in train_tasks.keys()}
+    pbar_name_train = "Train Epoch {}/{}".format(index+1,total_epoch)
+    pbar_name_eval = "Eval Epoch {}/{}".format(index + 1, total_epoch)
+    with pbar_fn(desc=pbar_name_train, total=train_batch, file=pbar_file) as pbar:
+        for k in range(train_batch):
+            train_data, train_target = train_dataset.next()
+            train_data = train_data.to(device)
+            train_target = {task_id: train_target[task_id].to(device) for task_id in train_tasks.keys()}
 
-            meta_optimizer.zero_grad()
-            autol.unrolled_backward(train_data, train_target, val_data, val_target,
-                                    scheduler.get_last_lr()[0], optimizer)
-            meta_optimizer.step()
+            # update meta-weights with Auto-Lambda
+            if opt.weight == 'autol':
+                val_data, val_target = val_dataset.next()
+                val_data = val_data.to(device)
+                val_target = {task_id: val_target[task_id].to(device) for task_id in train_tasks.keys()}
 
-        # update multi-task network parameters with task weights
-        optimizer.zero_grad()
-        train_pred = model(train_data)
-        train_loss = [compute_loss(train_pred[i], train_target[task_id], task_id) for i, task_id in enumerate(train_tasks)]
+                meta_optimizer.zero_grad()
+                autol.unrolled_backward(train_data, train_target, val_data, val_target,
+                                        scheduler.get_last_lr()[0], optimizer)
+                meta_optimizer.step()
 
-        train_loss_tmp = [0] * len(train_tasks)
+            # update multi-task network parameters with task weights
+            optimizer.zero_grad()
+            train_pred = model(train_data)
+            torch.save(train_pred[0],'./temp0.pt')
+            torch.save(train_pred[1],'./temp1.pt')
+            torch.save(train_pred[2], './temp2.pt')
+            train_loss = [compute_loss(train_pred[i], train_target[task_id], task_id) for i, task_id in enumerate(train_tasks)]
 
-        if opt.weight in ['equal', 'dwa']:
-            train_loss_tmp = [w * train_loss[i] for i, w in enumerate(lambda_weight[index])]
+            train_loss_tmp = [0] * len(train_tasks)
 
-        if opt.weight == 'uncert':
-            train_loss_tmp = [1 / (2 * torch.exp(w)) * train_loss[i] + w / 2 for i, w in enumerate(logsigma)]
+            if opt.weight in ['equal', 'dwa']:
+                train_loss_tmp = [w * train_loss[i] for i, w in enumerate(lambda_weight[index])]
 
-        if opt.weight == 'autol':
-            train_loss_tmp = [w * train_loss[i] for i, w in enumerate(autol.meta_weights)]
+            if opt.weight == 'uncert':
+                train_loss_tmp = [1 / (2 * torch.exp(w)) * train_loss[i] + w / 2 for i, w in enumerate(logsigma)]
 
-        loss = sum(train_loss_tmp)
+            if opt.weight == 'autol':
+                train_loss_tmp = [w * train_loss[i] for i, w in enumerate(autol.meta_weights)]
 
-        if opt.grad_method == 'none':
-            loss.backward()
-            optimizer.step()
+            loss = sum(train_loss_tmp)
 
-        # gradient-based methods applied here:
-        elif opt.grad_method == "graddrop":
-            for i in range(len(train_tasks)):
-                train_loss_tmp[i].backward(retain_graph=True)
-                grad2vec(model, grads, grad_dims, i)
-                model.zero_grad_shared_modules()
-            g = graddrop(grads)
-            overwrite_grad(model, g, grad_dims, len(train_tasks))
-            optimizer.step()
+            pbar.set_description(f"{pbar_name_train} ({loss:.3f})")
+            pbar.update()
 
-        elif opt.grad_method == "pcgrad":
-            for i in range(len(train_tasks)):
-                train_loss_tmp[i].backward(retain_graph=True)
-                grad2vec(model, grads, grad_dims, i)
-                model.zero_grad_shared_modules()
-            g = pcgrad(grads, rng, len(train_tasks))
-            overwrite_grad(model, g, grad_dims, len(train_tasks))
-            optimizer.step()
 
-        elif opt.grad_method == "cagrad":
-            for i in range(len(train_tasks)):
-                train_loss_tmp[i].backward(retain_graph=True)
-                grad2vec(model, grads, grad_dims, i)
-                model.zero_grad_shared_modules()
-            g = cagrad(grads, len(train_tasks), 0.4, rescale=1)
-            overwrite_grad(model, g, grad_dims, len(train_tasks))
-            optimizer.step()
+            if opt.grad_method == 'none':
+                loss.backward()
+                optimizer.step()
 
-        train_metric.update_metric(train_pred, train_target, train_loss)
+            # gradient-based methods applied here:
+            elif opt.grad_method == "graddrop":
+                for i in range(len(train_tasks)):
+                    train_loss_tmp[i].backward(retain_graph=True)
+                    grad2vec(model, grads, grad_dims, i)
+                    model.zero_grad_shared_modules()
+                g = graddrop(grads)
+                overwrite_grad(model, g, grad_dims, len(train_tasks))
+                optimizer.step()
+
+            elif opt.grad_method == "pcgrad":
+                for i in range(len(train_tasks)):
+                    train_loss_tmp[i].backward(retain_graph=True)
+                    grad2vec(model, grads, grad_dims, i)
+                    model.zero_grad_shared_modules()
+                g = pcgrad(grads, rng, len(train_tasks))
+                overwrite_grad(model, g, grad_dims, len(train_tasks))
+                optimizer.step()
+
+            elif opt.grad_method == "cagrad":
+                for i in range(len(train_tasks)):
+                    train_loss_tmp[i].backward(retain_graph=True)
+                    grad2vec(model, grads, grad_dims, i)
+                    model.zero_grad_shared_modules()
+                g = cagrad(grads, len(train_tasks), 0.4, rescale=1)
+                overwrite_grad(model, g, grad_dims, len(train_tasks))
+                optimizer.step()
+
+            train_metric.update_metric(train_pred, train_target, train_loss)
 
     train_str = train_metric.compute_metric()
     train_metric.reset()
@@ -220,16 +250,26 @@ for index in range(total_epoch):
     model.eval()
     with torch.no_grad():
         test_dataset = iter(test_loader)
-        for k in range(test_batch):
-            test_data, test_target = test_dataset.next()
-            test_data = test_data.to(device)
-            test_target = {task_id: test_target[task_id].to(device) for task_id in train_tasks.keys()}
+        with pbar_fn(desc=pbar_name_eval, total=test_batch,file=pbar_file) as pbar:
+            for k in range(test_batch):
+                test_data, test_target = test_dataset.next()
+                test_data = test_data.to(device)
+                test_target = {task_id: test_target[task_id].to(device) for task_id in train_tasks.keys()}
 
-            test_pred = model(test_data)
-            test_loss = [compute_loss(test_pred[i], test_target[task_id], task_id) for i, task_id in
-                         enumerate(train_tasks)]
+                test_pred = model(test_data)
+                test_loss = [compute_loss(test_pred[i], test_target[task_id], task_id) for i, task_id in
+                             enumerate(train_tasks)]
+                test_loss_str = ["{} loss: {:.3f}".format(task_id, test_loss[i].item()) for i, task_id in
+                                 enumerate(train_tasks)]
+                test_loss_dict = {task_id: test_loss[i].item() for i, task_id in enumerate(train_tasks)}
+                test_loss_dict["Train Loss"] = loss
+                test_metric.update_metric(test_pred, test_target, test_loss)
 
-            test_metric.update_metric(test_pred, test_target, test_loss)
+                pbar.set_description(f"{pbar_name_eval} ({ ' '.join(test_loss_str)})")
+                pbar.update()
+
+    writer.add_scalars(f'./', test_loss_dict, index)
+    #writer.add_scalar(f'./Loss/Train', loss, index)
 
     test_str = test_metric.compute_metric()
     test_metric.reset()
@@ -261,3 +301,5 @@ for index in range(total_epoch):
 
     np.save('logging/mtl_dense_{}_{}_{}_{}_{}_{}_.npy'
             .format(opt.network, opt.dataset, opt.task, opt.weight, opt.grad_method, opt.seed), dict)
+    torch.save(model.state_dict(),'logging/mtl_dense_{}_{}_{}_{}_{}_{}_.pt'
+            .format(opt.network, opt.dataset, opt.task, opt.weight, opt.grad_method, opt.seed))

@@ -1,4 +1,4 @@
-name: ObjectFolder-env
+name: Tactile
 channels:
   - pytorch
   - conda-forge

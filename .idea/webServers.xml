@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="7a327538-25d5-4a3b-b727-8b2506143b81" name="Tactile">
+        <fileTransfer rootFolder="/home/noashai/Tactile" accessType="SFTP" host="132.68.54.11" port="22" sshConfigId="fd94fd1d-118f-4cc0-bf88-60056d8168b4" sshConfig="noashai@132.68.54.11:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
